@@ -3,16 +3,13 @@ package com.example.mini_blog.controller;
 import com.example.mini_blog.dto.post.PostCreateRequest;
 import com.example.mini_blog.dto.post.PostResponse;
 import com.example.mini_blog.service.PostService;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.hamcrest.Matchers;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -25,63 +22,58 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(PostController.class)
-public class PostControllerTest {
+class PostControllerTest {
 
     @Autowired
-    MockMvc mockMvc;
+    MockMvc mvc;
 
     @Autowired
-    ObjectMapper objectMapper;
+    ObjectMapper om;
 
     @MockitoBean
-    PostService service;
+    PostService postService;
 
-    // CRUD Tests
     @Test
-    void create_post_returns_201_status_and_body() throws Exception {
-        long userId = 1L;
-        long postId = 1L;
-        String userName = "testUser";
-        Instant createdAt = Instant.now();
-        Instant updatedAt = null;
-        PostCreateRequest postCreateRequest = new PostCreateRequest("News", "News Feed", userId);
-        PostResponse postResponse = new PostResponse(postId, "News", "News Feed", userId, userName, createdAt, updatedAt);
+    void create_returns201_and_body() throws Exception {
+        var req = new PostCreateRequest("Hello", "World", 1L);
+        var res = new PostResponse(10L, "Hello", "World", 1L, "ali", Instant.now(), Instant.now());
 
-        when(service.create(postCreateRequest)).thenReturn(postResponse);
+        when(postService.create(any())).thenReturn(res);
 
-        mockMvc.perform(post("/api/posts")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(postCreateRequest)))
+        mvc.perform(post("/api/posts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(req)))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.id").value(1))
-                .andExpect(jsonPath("$.title").value("News"));
+                .andExpect(header().string("Location", Matchers.endsWith("/api/posts/")))
+                .andExpect(jsonPath("$.id").value(10))
+                .andExpect(jsonPath("$.authorUsername").value("ali"));
     }
 
     @Test
-    void list_pagination() throws Exception {
-        long userId = 1L;
-        long postId = 1L;
-        String userName = "testUser";
-        Instant createdAt = Instant.now();
-        Instant updatedAt = null;
+    void list_paginates() throws Exception {
+        var page = new PageImpl<>(List.of(
+                new PostResponse(1L, "A", "...", 1L, "ali", Instant.now(), Instant.now()),
+                new PostResponse(2L, "B", "...", 1L, "ali", Instant.now(), Instant.now())
+        ), PageRequest.of(0,2), 5);
 
-        PostResponse postResponse1 =
-                new PostResponse(postId, "News", "News Feed", userId, userName, createdAt, updatedAt);
-        PostResponse postResponse2  =
-                new PostResponse(postId, "News", "News Feed", userId, userName, createdAt, updatedAt);
+        when(postService.list(any())).thenReturn(page);
 
-        PageImpl<PostResponse> pageableResponse =
-                new PageImpl<>(List.of(postResponse1, postResponse2), PageRequest.of(0, 2), 5);
-
-        when(service.list(any())).thenReturn(pageableResponse);
-
-        mockMvc.perform(get("/api/posts?page=0&size2"))
+        mvc.perform(get("/api/posts?page=0&size=2"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].id").value(postId));
+                .andExpect(jsonPath("$.content[0].id").value(1))
+                .andExpect(jsonPath("$.totalElements").value(5));
+    }
+
+    @Test
+    void get_notFound_returns404() throws Exception {
+        when(postService.get(99L)).thenThrow(new IllegalArgumentException("Post not found: 99"));
+
+        mvc.perform(get("/api/posts/99"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("Post not found: 99"));
     }
 }
 
